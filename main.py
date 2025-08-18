@@ -1,92 +1,65 @@
+from utilities import value_shifted_array, calculate_cross_covariance, calculate_approximate_gradient_from_covariances
+
 import numpy as np
-from sklearn.datasets import make_spd_matrix
-
-def generate_random_array(size:int) -> np.ndarray: 
-    """Generates a random array of given size."""
-    return np.random.rand(size)
-
-def value_shifted_array(array:np.ndarray, shift_value:np.ndarray) -> np.ndarray:
-    """Shifts the values in the array by a given value."""
-    return array + shift_value[np.newaxis, :]
 
 
-# based on paper SPE-173236-MS
-def calculate_cross_covariance(array1:np.ndarray, array2:np.ndarray) -> float:
-    """Calculates the covariance between two arrays.
-    
-    N = number of well parameters
-    M = number of ensemble realizations
-    array1: First input array. array1 size (N, M)
-    array2: Second input array. array2 size (N, M) or (M,)
-    """
-    
-    N = array1.shape[0]
-    M = array1.shape[1]
-    if array2.ndim == 1 and array2.shape[0] != M:
-        raise ValueError("If array2 is a 1D array, it must have the same number of elements as the number of ensemble realizations (M).")
-    
-    if array2.ndim == 1:
-        # If array2 is a 1D array, reshape it to M x 1
-        array2 = array2.reshape(1, M)
-    else:
-        # check if array1 and array2 have the same number of rows
-        if N != array2.shape[0]:
-            raise ValueError("Both arrays must have the same number of rows (N).")
-    
-    return 1/(M - 1) * np.matmul(array1, array2.T)
+class stosag:
+    """Stochastic Optimization using Stochastic Gradient Descent (SPE-173236-MS)"""
 
-def calculate_approximate_gradient_from_covariances(Cuu, Cuj, Ct=None, U=None, j=None, mode:int=0):
-    """_summary_
+    def __init__(self, u, u0, function, Ct, mode=4):
+        self.u = u  # Ensemble members
+        self.u0 = u0  # Initial iterate value
+        self.function = function  # Function to evaluate
+        self.Ct = Ct  # Smoother covariance matrix
+        self.mode = mode  # Mode for gradient calculation
+        pass
 
-    Args:
-        mode (int, optional): different modes of calculating gradient based on SPE-173236-MS. Defaults to 0.
-        mode 0: calculate gradient using Equation (8)
-        mode 1: calculate gradient using Equation (11)
-        mode 2: calculate gradient using Equation (12)
-        mode 3: calculate gradient using Equation (14)
-        mode 4: calculate gradient using Equation (15) (Recommended approach in the paper)
-    Returns:
-    
-        np.ndarray: gradient array
+    def run(self):
+        
+        self.j0 = self.function(self.u0)  # calculate j0 based on the Rosenbrock function
+        self.j = self.function(self.u)  # calculate j based on the Rosenbrock function
+            
+        self.U = value_shifted_array(self.u, self.u0)  # Equation (19) as recommended in the paper
+        self.J = value_shifted_array(self.j, self.j0)  # Equation (20) as recommended in the paper
+        
+        # Precalculate covariance matrices
+        self.Cuu = calculate_cross_covariance(self.U, self.U)
+        self.Cuj = calculate_cross_covariance(self.U, self.J)
 
-    """
-    
-    if mode == 0:
-        g = np.matmul(np.linalg.inv(Cuu), Cuj)
-    elif mode == 1:
-        g = Cuj[:,0]
-    elif mode == 2:
-        g = np.matmul(Cuu, Cuj)[:,0]
-    elif mode == 4:
-        # Recommended approach in the paper
-        UU = np.matmul(U, U.T)
-        Uj = np.matmul(U, j)
-        g = np.matmul(np.matmul(Ct, np.linalg.pinv(UU)), Uj)
-    else:
-        raise ValueError("Invalid mode. Choose from 0, 1, 2, or 3.")
-    
-    return g
+        # Calculate gradients using different modes
+        self.g = calculate_approximate_gradient_from_covariances(self.Cuu, 
+                                                                 self.Cuj, 
+                                                                 Ct=self.Ct, 
+                                                                 U=self.U, 
+                                                                 j=self.j, 
+                                                                 mode=self.mode) # We use mode 4 (Equation (15)) as recommended in the paper
 
-# predefined distribution covariance matrix Ct
-N = 100  # number of well parameters
-M = 10  # number of ensemble realizations
-Ct = make_spd_matrix(N, random_state=42)
-
-u = np.random.rand(N, M)
-u0 = -np.random.rand(M)
-
-j = np.random.rand(M)
-j0 = 0.2
-
-U = value_shifted_array(u, u0)
-J = j - j0
-
-# Precalculate covariance matrices
-Cuu = calculate_cross_covariance(U, U)
-Cuj = calculate_cross_covariance(U, J)
-
-
-# Calculate gradients using different modes
-g1 = calculate_approximate_gradient_from_covariances(Cuu, Cuj, mode=1)
-g2 = calculate_approximate_gradient_from_covariances(Cuu, Cuj, mode=2)
-g4 = calculate_approximate_gradient_from_covariances(Cuu, Cuj, Ct=Ct, U=U, j=J, mode=4)
+        # Update the values in U based on the calculated gradients using backtracking line search
+        UNext = np.zeros(self.U.shape)
+        uNext = np.zeros(self.u.shape)
+        
+        alpha = 0.01  # step size
+        
+        # backtracking inner loop
+        maxIter = 10
+        for ii in range(maxIter):
+            
+            for i in range(self.u0.shape[0]):
+                UNext[:, i] = self.U[:, i] - alpha * self.g  # Update U using the gradient from mode 4 
+            
+            # Update u based on the shifted values
+            uNext = value_shifted_array(UNext, -self.u0)
+            
+            # Calculate the new function values
+            jNext = self.function(uNext)
+            
+            # Check if the new function values are better than the old ones using Armijo's rule
+            # if np.all(jNext <= self.j + 0.1 * alpha * np.sum(self.g**2)):
+            if np.mean(jNext) <= np.mean(self.j) + 0.1 * alpha * np.sum(self.g**2): # Use mean for robustness measure, might change later
+                break
+            else:
+                alpha *= 0.5
+        
+        print(ii, uNext, jNext)
+        
+        return uNext  # Return the updated ensemble members
