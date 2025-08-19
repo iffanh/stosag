@@ -6,7 +6,7 @@ def generate_random_array(size:int) -> np.ndarray:
 
 def value_shifted_array(array:np.ndarray, shift_value:np.ndarray) -> np.ndarray:
     """Shifts the values in the array by a given value."""
-    return array + shift_value[np.newaxis, :]
+    return array - shift_value[:, np.newaxis]  # Ensure the shift_value is broadcasted correctly
 
 
 # based on paper SPE-173236-MS
@@ -24,13 +24,13 @@ def calculate_cross_covariance(array1:np.ndarray, array2:np.ndarray) -> float:
     if array2.ndim == 1 and array2.shape[0] != M:
         raise ValueError("If array2 is a 1D array, it must have the same number of elements as the number of ensemble realizations (M).")
     
-    if array2.shape[0] == 1:
-        # If array2 is a 1D array, reshape it to 1 x M
-        array2 = array2.reshape(1, M)
-    else:
-        # check if array1 and array2 have the same number of rows
-        if N != array2.shape[0]:
-            raise ValueError("Both arrays must have the same number of rows (N).")
+    # if array2.shape[0] == 1:
+    #     # If array2 is a 1D array, reshape it to 1 x M
+    #     array2 = array2.reshape(1, M)
+    # else:
+    #     # check if array1 and array2 have the same number of rows
+    #     if N != array2.shape[0]:
+    #         raise ValueError("Both arrays must have the same number of rows (N).")
     
     return 1/(M - 1) * np.matmul(array1, array2.T)
 

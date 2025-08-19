@@ -6,60 +6,96 @@ import numpy as np
 class stosag:
     """Stochastic Optimization using Stochastic Gradient Descent (SPE-173236-MS)"""
 
-    def __init__(self, u, u0, function, Ct, mode=4):
-        self.u = u  # Ensemble members
+    def __init__(self, U, u0, functions, Ct, mode=4):
+        self.U = U  # Ensemble members
         self.u0 = u0  # Initial iterate value
-        self.function = function  # Function to evaluate
+        self.functions = functions  # Function to evaluate
         self.Ct = Ct  # Smoother covariance matrix
         self.mode = mode  # Mode for gradient calculation
+        
+        self.robustness_measure = lambda x: np.mean(x, axis=0)  # Robustness measure function
+        
+        self.u_list = []  # List to store best iterate values
+        self.j_list = []  # List to store function values
         pass
 
     def run(self):
         
-        self.j0 = self.function(self.u0)  # calculate j0 based on the Rosenbrock function
-        self.j = self.function(self.u)  # calculate j based on the Rosenbrock function
-            
-        self.U = value_shifted_array(self.u, self.u0)  # Equation (19) as recommended in the paper
-        self.J = value_shifted_array(self.j, self.j0)  # Equation (20) as recommended in the paper
-        
-        # Precalculate covariance matrices
-        self.Cuu = calculate_cross_covariance(self.U, self.U)
-        self.Cuj = calculate_cross_covariance(self.U, self.J)
+        self._main_loop(self.u0, self.U, self.functions)  # Start the main loop
 
-        # Calculate gradients using different modes
-        self.g = calculate_approximate_gradient_from_covariances(self.Cuu, 
-                                                                 self.Cuj, 
-                                                                 Ct=self.Ct, 
-                                                                 U=self.U, 
-                                                                 j=self.j, 
-                                                                 mode=self.mode) # We use mode 4 (Equation (15)) as recommended in the paper
-
-        # Update the values in U based on the calculated gradients using backtracking line search
-        UNext = np.zeros(self.U.shape)
-        uNext = np.zeros(self.u.shape)
+    
+    def _main_loop(self, uInit, UInit, function:callable, alpha=0.01, maxIter=10):
         
-        alpha = 0.01  # step size
+        UCurr = UInit  # Current ensemble members
+        JCurr = self.robustness_measure(function(UCurr))  # Current function values
         
-        # backtracking inner loop
-        maxIter = 10
+        uBest = uInit  # Best iterate value
+        jBest = self.robustness_measure(function(uBest))  # Best function value
+        
+        """Main loop for the optimization process."""
         for ii in range(maxIter):
+            print(f"Iteration {ii}: uBest = {uBest}, jBest = {jBest}, alpha = {alpha}")
             
-            for i in range(self.u0.shape[0]):
-                UNext[:, i] = self.U[:, i] - alpha * self.g  # Update U using the gradient from mode 4 
+            dU = value_shifted_array(UCurr, uBest)  # Shift the ensemble members
+            dJ = JCurr - jBest  # Shift the function values
             
-            # Update u based on the shifted values
-            uNext = value_shifted_array(UNext, -self.u0)
+            # Calculate covariance matrices
+            Cuu = calculate_cross_covariance(dU, dU)
+            Cuj = calculate_cross_covariance(dU, dJ)
             
-            # Calculate the new function values
-            jNext = self.function(uNext)
+            # Calculate gradients
+            g = calculate_approximate_gradient_from_covariances(Cuu, 
+                                                                     Cuj, 
+                                                                     Ct=self.Ct, 
+                                                                     U=dU, 
+                                                                     j=dJ, 
+                                                                     mode=self.mode)
             
-            # Check if the new function values are better than the old ones using Armijo's rule
-            # if np.all(jNext <= self.j + 0.1 * alpha * np.sum(self.g**2)):
-            if np.mean(jNext) <= np.mean(self.j) + 0.1 * alpha * np.sum(self.g**2): # Use mean for robustness measure, might change later
+            # Perform backtracking line search to find the optimal step size
+            uNext, jNext, _ = self._backtracking_line_search(uBest, jBest, function, g, alpha)
+            
+            # Update ensemble members and function values
+            UCurr = uNext[:,np.newaxis] + 0.1 * np.random.rand(*UInit.shape)  # Add some noise
+            
+            uBest = uNext  # Update best iterate value
+            jBest = jNext  # Update best function value
+            
+            # Store results
+            self._write_results(uBest, jBest)
+    
+    def _backtracking_line_search(self, uInit, jInit, function, g, alpha, maxIter=10):
+        """Perform backtracking line search to find the optimal step size.
+        uInit: Initial ensemble members
+        jInit: Initial function values
+        g: Gradient array
+        alpha: Initial step size
+        maxIter: Maximum number of iterations for backtracking line search
+        """
+        for ii in range(maxIter):
+            uNext = uInit - alpha * g  # Update ensemble members based on the gradient
+            
+            UNext = uNext + 0.1 * np.random.rand(*uInit.shape)  # Add some noise
+            
+            jNext = self.robustness_measure(function(UNext))
+            
+            # print(f"Iteration {ii}: UNext = {UNext}, jNext = {jNext}, jInit = {jInit}, alpha = {alpha}, g = {g}"
+            #       )
+            # if np.mean(jNext) <= np.mean(jInit) + 0.1 * alpha * np.sum(g**2):
+            if np.mean(jNext) <= np.mean(jInit):
+                print(f"Backtracking line search successful at iteration {ii} with alpha = {alpha}, jNext = {jNext}, jInit = {jInit}")
                 break
             else:
                 alpha *= 0.5
+                if ii == maxIter - 1:
+                    print("Warning: Maximum iterations reached in backtracking line search.")
+                    return uInit, jInit, alpha
+                
+        return uNext, jNext, alpha
+    
+    def _write_results(self, uNext, jNext):
+        """Write results to a file or database."""
         
-        print(ii, uNext, jNext)
-        
-        return uNext  # Return the updated ensemble members
+        self.u_list.append(uNext)
+        self.j_list.append(jNext)
+         
+        pass
