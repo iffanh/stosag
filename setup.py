@@ -14,7 +14,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     # packages=setuptools.find_packages('py_trsqp', 'py_trsqp.utils', exclude=['test']),
-    packages=['stosag', 'utilities'],
+    packages=['stosag'],
     name='stosag',
     version='0.0.1',
     author='Muhammad Iffan Hannanu',
