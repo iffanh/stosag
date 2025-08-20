@@ -27,10 +27,10 @@ pip install numpy scipy scikit-learn
 Run the provided test script:
 
 ```bash
-python test.py
+python test_rosenbrock.py
 ```
 
-You can modify `test.py` to use your own objective functions and uncertainty models.
+You can modify `test_rosenbrock.py` to use your own objective functions and uncertainty models.
 
 ## How It Works
 

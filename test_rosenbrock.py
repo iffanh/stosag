@@ -1,5 +1,5 @@
 from sklearn.datasets import make_spd_matrix
-from main import stosag
+from stosag import stosag
 from scipy.stats import norm
 import numpy as np
 

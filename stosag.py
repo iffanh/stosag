@@ -1,6 +1,5 @@
 from utilities import value_shifted_array, calculate_cross_covariance, calculate_approximate_gradient_from_covariances
 from scipy.stats import multivariate_normal
-from typing import List, Callable
 
 import numpy as np
 
