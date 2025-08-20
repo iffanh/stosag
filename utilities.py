@@ -1,4 +1,5 @@
 import numpy as np
+from typing import List
 
 def generate_random_array(size:int) -> np.ndarray: 
     """Generates a random array of given size."""
@@ -9,6 +10,7 @@ def value_shifted_array(array:np.ndarray, shift_value:np.ndarray) -> np.ndarray:
     return array - shift_value[:, np.newaxis]  # Ensure the shift_value is broadcasted correctly
 
 
+## Covariance functions to calculate approximate gradients
 # based on paper SPE-173236-MS
 def calculate_cross_covariance(array1:np.ndarray, array2:np.ndarray) -> float:
     """Calculates the covariance between two arrays.
@@ -23,14 +25,6 @@ def calculate_cross_covariance(array1:np.ndarray, array2:np.ndarray) -> float:
     M = array1.shape[1]
     if array2.ndim == 1 and array2.shape[0] != M:
         raise ValueError("If array2 is a 1D array, it must have the same number of elements as the number of ensemble realizations (M).")
-    
-    # if array2.shape[0] == 1:
-    #     # If array2 is a 1D array, reshape it to 1 x M
-    #     array2 = array2.reshape(1, M)
-    # else:
-    #     # check if array1 and array2 have the same number of rows
-    #     if N != array2.shape[0]:
-    #         raise ValueError("Both arrays must have the same number of rows (N).")
     
     return 1/(M - 1) * np.matmul(array1, array2.T)
 
@@ -62,8 +56,69 @@ def calculate_approximate_gradient_from_covariances(Cuu, Cuj, Ct=None, U=None, j
         Uj = np.matmul(U, j)
         g = np.matmul(np.matmul(Ct, np.linalg.pinv(UU)), Uj)
     else:
-        raise ValueError("Invalid mode. Choose from 0, 1, 2, or 3.")
+        raise ValueError("Invalid mode. Choose from 0, 1, 2, or 4.")
     
     return g
 
 
+## Well related covariance functions
+def create_spherical_covariance_function(Nw:int, std:List[float], Ns:List[int], Nt:List[int]) -> np.ndarray:
+    """From the paper originally by Chen et al. (2015). "Ensemble-Based Optimization of the
+    Water-Alternating-Gas-Injection Process" SPE Journal
+    
+    or by Ru et al. (2017). "An efficient adaptive algorithm 
+    for robust control optimization using Stosag" Journal of Petroleum Science and Engineering, 159, 314-330
+    
+    Nw = number of wells
+    std = standard deviations for each well
+    Ns = number of correlated control steps for each well
+    Nt = number of time steps for each well
+    
+    """
+    
+    for k in range(Nw):
+        Cd = create_block_matrix(std[k], Ns[k], Nt[k])
+        if k == 0:
+            C = Cd
+        else:
+            # Create a block diagonal matrix with the current covariance matrix
+            # and the previous covariance matrices
+        
+            C = np.block([[C, np.zeros((C.shape[0], Cd.shape[1]))],[np.zeros((Cd.shape[0], C.shape[1])), Cd]])
+        
+    return C
+
+def create_block_matrix(std:float, Ns:int, Nt:int) -> np.ndarray:
+    """Creates a block diagonal matrix with the given standard deviation and number of correlated steps."""
+    
+    if Nt < Ns:
+        raise ValueError("Nt must be greater than or equal to Ns.")
+    
+    
+    Cd = np.zeros((Nt,Nt))
+    for i in range(Nt):
+        for j in range(Nt):
+            if abs(i - j) > Ns:
+                Cd[i,j] = 0
+            else:
+                # Using a cubic decay function for the covariance
+                Cd[i,j] = std**2 * (1 - 1.5*abs(i - j)/Ns + 0.5*(abs(i - j)/Ns)**3)
+    
+    return Cd
+
+## variable transformation functions
+def normalize_variable(ub, lb, x):
+    """Normalizes a variable x between the lower bound lb and upper bound ub."""
+    return (x - lb) / (ub - lb)
+
+def denormalize_variable(ub, lb, x):
+    """Denormalizes a variable x between the lower bound lb and upper bound ub."""
+    return x * (ub - lb) + lb
+
+def log_normalize_variable(ub, lb, x):
+    """Log-normalizes a variable x between the lower bound lb and upper bound ub."""
+    return np.log((x - lb) / (ub - x))
+
+def log_denormalize_variable(ub, lb, x):
+    """Log-denormalizes a variable x between the lower bound lb and upper bound ub."""
+    return (ub * np.exp(x) + lb) / (1 + np.exp(x))
