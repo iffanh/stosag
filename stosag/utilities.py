@@ -107,18 +107,23 @@ def create_block_matrix(std:float, Ns:int, Nt:int) -> np.ndarray:
     return Cd
 
 ## variable transformation functions
-def normalize_variable(ub, lb, x):
+@np.vectorize
+def normalize_variable(x, lb, ub):
     """Normalizes a variable x between the lower bound lb and upper bound ub."""
     return (x - lb) / (ub - lb)
 
-def denormalize_variable(ub, lb, x):
+@np.vectorize
+def denormalize_variable(x, lb, ub):
     """Denormalizes a variable x between the lower bound lb and upper bound ub."""
-    return x * (ub - lb) + lb
+    return x * (ub - lb) + lb  # Ensure the denormalization is done correctly
+    # return np.add(np.multiply(x,(ub - lb), axis=0), lb, axis=0)
 
-def log_normalize_variable(ub, lb, x):
+@np.vectorize
+def log_normalize_variable(x, lb, ub):
     """Log-normalizes a variable x between the lower bound lb and upper bound ub."""
     return np.log((x - lb) / (ub - x))
 
-def log_denormalize_variable(ub, lb, x):
+@np.vectorize
+def log_denormalize_variable(x, lb, ub):
     """Log-denormalizes a variable x between the lower bound lb and upper bound ub."""
     return (ub * np.exp(x) + lb) / (1 + np.exp(x))
