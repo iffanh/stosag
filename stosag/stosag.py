@@ -26,7 +26,7 @@ class stosag:
         
         self.robustness_measure = lambda x: np.mean(x, axis=0)  # Robustness measure function
         
-        self.u_list = []  # List to store best iterate values
+        self.x_list = []  # List to store best iterate values
         self.j_list = []  # List to store function values
         pass
         
@@ -137,10 +137,10 @@ class stosag:
                 
         return uNext, jNext, alpha, is_successful
     
-    def _write_results(self, uNext, jNext):
+    def _write_results(self, x, j):
         """Write results to a file or database."""
         
-        self.u_list.append(uNext)
-        self.j_list.append(jNext)
+        self.x_list.append(x)
+        self.j_list.append(j)
          
         pass
