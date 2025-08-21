@@ -14,12 +14,16 @@ import numpy as np
 class stosag:
     """Stochastic Optimization using Stochastic Gradient Descent (SPE-173236-MS)"""
 
-    def __init__(self, x0, functions, lb, ub, Nens, Ct, mode=4):
+    def __init__(self, x0, functions, lb, ub, Nens, Ct, constants):
         self.x0 = x0  # Initial iterate value
         self.functions = functions  # Function to evaluate
         self.Nens = Nens  # Number of ensemble realizations
         self.Ct = Ct  # Smoother covariance matrix
-        self.mode = mode  # Mode for gradient calculation
+        
+        self.mode = constants['mode']  # Mode for gradient calculation
+        self.max_iter = constants['max_iter']  # Maximum number of iterations
+        self.line_search_max_iter = constants['line_search_max_iter']  # Maximum iterations for line search
+        self.line_search_alpha = constants['line_search_alpha']  # Initial step size
         
         self.lb = lb  # Lower bound for the optimization
         self.ub = ub  # Upper bound for the optimization
@@ -28,6 +32,8 @@ class stosag:
         
         self.x_list = []  # List to store best iterate values
         self.j_list = []  # List to store function values
+        
+        self.N_EVAL = 0  # Number of evaluations
         pass
         
     def modify_function_to_use_transformed_variables(self, functions):
@@ -35,10 +41,14 @@ class stosag:
         def modified_function(u):
             if u.ndim == 1:
                 x = log_denormalize_variable(u, self.lb, self.ub)  # Assuming denormalize is a function that transforms u to the original variable space
+                self.N_EVAL += 1
             else:
-                x = np.zeros((u.shape[0], u.shape[1]))  # Initialize x with the correct shape
+                x = np.zeros(u.shape)  # Initialize x with the correct shape
                 for i in range(u.shape[1]):
                     x[:,i] = log_denormalize_variable(u[:,i], self.lb, self.ub)
+                    
+                self.N_EVAL += u.shape[1]  # Increment the number of evaluations by the number of ensemble realizations
+                
             return functions(x)
         
         return modified_function
@@ -62,22 +72,25 @@ class stosag:
         
         return u0, mfunctions
     
-    def _main_loop(self, uInit, mfunctions:callable, alpha=0.01, maxIter=10000):
+    def _main_loop(self, uInit, mfunctions:callable):
         
         UInit = multivariate_normal(uInit, self.Ct).rvs(size=self.Nens).T  # Ensemble members around the initial iterate   
         
         UCurr = UInit  # Current ensemble members
-        JCurr = self.robustness_measure(mfunctions(UCurr))  # Current function values
+        # JCurr = self.robustness_measure(mfunctions(UCurr))  # Current function values
         
         uBest = uInit  # Best iterate value
         jBest = self.robustness_measure(mfunctions(uBest))  # Best function value
         
         is_successful = True  # Flag to check if the bracktracking search is successful
+        line_ii = 0 # Line search iteration index
         """Main loop for the optimization process."""
-        for ii in range(maxIter):
+        for ii in range(self.max_iter):
+            
+            JCurr = self.robustness_measure(mfunctions(UCurr))  # Current function values
             
             if is_successful:
-                print(f"Iteration {ii}: uBest = {log_denormalize_variable(uBest, self.lb, self.ub)}, jBest = {jBest}")
+                print(f"Iteration {ii}: xBest = {log_denormalize_variable(uBest, self.lb, self.ub)}, jBest = {jBest}, line_ii = {line_ii}, N_EVAL = {self.N_EVAL}")
                 # Store results
                 self._write_results(log_denormalize_variable(uBest, self.lb, self.ub), jBest)
             
@@ -97,11 +110,11 @@ class stosag:
                                                                 mode=self.mode)
             
             # Perform backtracking line search to find the optimal step size
-            uNext, jNext, _, is_successful = self._backtracking_line_search(uBest, 
+            uNext, jNext, line_ii, is_successful = self._backtracking_line_search(uBest, 
                                                                             jBest, 
                                                                             mfunctions, 
                                                                             g, 
-                                                                            alpha)
+                                                                            self.line_search_alpha)
             
             # Update ensemble members and function values
             UCurr = multivariate_normal(uNext, self.Ct).rvs(size=UInit.shape[1]).T  # Ensemble members around the next iterate
@@ -111,7 +124,7 @@ class stosag:
             
             
     
-    def _backtracking_line_search(self, uInit, jInit, mfunctions, g, alpha, maxIter=10):
+    def _backtracking_line_search(self, uInit, jInit, mfunctions, g, alpha):
         """Perform backtracking line search to find the optimal step size.
         uInit: Initial ensemble members
         jInit: Initial function values
@@ -119,7 +132,7 @@ class stosag:
         alpha: Initial step size
         maxIter: Maximum number of iterations for backtracking line search
         """
-        for ii in range(maxIter):
+        for ii in range(self.line_search_max_iter):
             uNext = uInit - alpha * g  # Calculate the next best point based on the gradient
             
             jNext = self.robustness_measure(mfunctions(uNext)) # Evaluate function values at the new point
@@ -130,12 +143,12 @@ class stosag:
                 break
             else:
                 alpha *= 0.5
-                if ii == maxIter - 1:
+                if ii == self.line_search_max_iter - 1:
                     is_successful = False
                     # print("Warning: Maximum iterations reached in backtracking line search.")
                     return uInit, jInit, alpha, is_successful
                 
-        return uNext, jNext, alpha, is_successful
+        return uNext, jNext, ii, is_successful
     
     def _write_results(self, x, j):
         """Write results to a file or database."""
