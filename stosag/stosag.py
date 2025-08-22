@@ -1,4 +1,4 @@
-from utilities import value_shifted_array, \
+from stosag.utilities import value_shifted_array, \
                         calculate_cross_covariance, \
                         calculate_approximate_gradient_from_covariances, \
                         normalize_variable, \
