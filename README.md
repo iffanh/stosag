@@ -17,9 +17,7 @@ StoSAG is an ensemble-based stochastic optimization method designed for problems
 Clone the repository and install required packages:
 
 ```bash
-git clone https://github.com/yourusername/stosag.git
-cd stosag
-pip install numpy scipy scikit-learn
+pip install git+https://github.com/iffanh/stosag.git
 ```
 
 ## Usage
