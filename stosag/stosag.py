@@ -156,10 +156,10 @@ class stosag:
                 
         return uNext, jNext, ii, is_successful
     
-    def _write_results(self, x, j):
+    def _write_results(self, x:np.ndarray, j:float):
         """Write results to a file or database."""
         
-        self.x_list.append(x)
+        self.x_list.append(x.tolist())
         self.j_list.append(j)
          
         pass
