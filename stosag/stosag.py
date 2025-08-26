@@ -38,17 +38,21 @@ class stosag:
         
     def modify_function_to_use_transformed_variables(self, functions):
         """Modify the function to use transformed variables."""
-        def modified_function(u):
-            if u.ndim == 1:
+        def modified_function(u:list):
+            if isinstance(u[0], float) or isinstance(u[0], int):
+            # if u.ndim == 1:
                 x = log_denormalize_variable(u, self.lb, self.ub)  # Assuming denormalize is a function that transforms u to the original variable space
                 self.N_EVAL += 1
-            else:
-                x = np.zeros(u.shape)  # Initialize x with the correct shape
-                for i in range(u.shape[1]):
-                    x[:,i] = log_denormalize_variable(u[:,i], self.lb, self.ub)
+            # else:
+            elif isinstance(u[0], list):
+                # x = np.zeros(u.shape)
+                x = [] 
+                for i in range(len(u)):
+                    x.append(log_denormalize_variable(u[i], self.lb, self.ub).tolist())
                     
-                self.N_EVAL += u.shape[1]  # Increment the number of evaluations by the number of ensemble realizations
+                self.N_EVAL += i  # Increment the number of evaluations by the number of ensemble realizations
                 
+            x = np.array(x)
             return functions(x)
         
         return modified_function
@@ -66,7 +70,7 @@ class stosag:
         
         # Normalize the initial iterate value
         u0 = log_normalize_variable(self.x0, self.lb, self.ub)
-        
+    
         # Modify the function to use transformed variables
         mfunctions = self.modify_function_to_use_transformed_variables(self.functions)
         
@@ -87,7 +91,7 @@ class stosag:
         """Main loop for the optimization process."""
         for ii in range(self.max_iter):
             
-            JCurr = self.robustness_measure(mfunctions(UCurr))  # Current function values
+            JCurr = mfunctions(UCurr.T.tolist())  # Current function values
             
             if is_successful:
                 print(f"Iteration {ii}: xBest = {log_denormalize_variable(uBest, self.lb, self.ub)}, jBest = {jBest}, line_ii = {line_ii}, N_EVAL = {self.N_EVAL}")
@@ -96,7 +100,7 @@ class stosag:
             
             dU = value_shifted_array(UCurr, uBest)  # Shift the ensemble members
             dJ = JCurr - jBest  # Shift the function values
-            
+        
             # Calculate covariance matrices
             Cuu = calculate_cross_covariance(dU, dU)
             Cuj = calculate_cross_covariance(dU, dJ)
@@ -132,9 +136,11 @@ class stosag:
         alpha: Initial step size
         maxIter: Maximum number of iterations for backtracking line search
         """
+    
         for ii in range(self.line_search_max_iter):
             uNext = uInit - alpha * g  # Calculate the next best point based on the gradient
             
+         
             jNext = self.robustness_measure(mfunctions(uNext)) # Evaluate function values at the new point
 
             if jNext <= jInit:
