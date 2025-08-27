@@ -20,10 +20,12 @@ class stosag:
         self.Nens = Nens  # Number of ensemble realizations
         self.Ct = Ct  # Smoother covariance matrix
         
-        self.mode = constants['mode']  # Mode for gradient calculation
-        self.max_iter = constants['max_iter']  # Maximum number of iterations
-        self.line_search_max_iter = constants['line_search_max_iter']  # Maximum iterations for line search
+        self.mode = constants['mode'] if 'mode' in constants else 4 # Mode for gradient calculation
+        self.max_iter = constants['max_iter'] if 'max_iter' in constants else 1000 # Maximum number of iterations
+        self.line_search_max_iter = constants['line_search_max_iter'] if 'line_search_max_iter' in constants else 20 # Maximum iterations for line search
+        self.line_search_max_attempts = constants['line_search_max_attempts'] if 'line_search_max_attempts' in constants else 5 # Maximum attempts for line search
         self.line_search_alpha = constants['line_search_alpha']  # Initial step size
+        self.improvement_threshold = constants['improvement_threshold'] if 'improvement_threshold' in constants else 1e-6  # Improvement threshold
         
         self.lb = lb  # Lower bound for the optimization
         self.ub = ub  # Upper bound for the optimization
@@ -85,7 +87,9 @@ class stosag:
         
         uBest = uInit  # Best iterate value
         jBest = self.robustness_measure(mfunctions(uBest))  # Best function value
+        jInit = jBest  # Initial function value
         
+        N_unsuccessful = 0  # Counter for unsuccessful line searches
         is_successful = True  # Flag to check if the bracktracking search is successful
         line_ii = 0 # Line search iteration index
         """Main loop for the optimization process."""
@@ -93,10 +97,30 @@ class stosag:
             
             JCurr = mfunctions(UCurr.T.tolist())  # Current function values
             
+            # stopping conditions:
+            # 1. if the function value does not improve after N line search iterations
+            # 2. if the improvement in function value is less than a threshold
+            # 3. if the maximum number of iterations is reached
+            
             if is_successful:
                 print(f"Iteration {ii}: xBest = {log_denormalize_variable(uBest, self.lb, self.ub)}, jBest = {jBest}, line_ii = {line_ii}, N_EVAL = {self.N_EVAL}")
                 # Store results
                 self._write_results(log_denormalize_variable(uBest, self.lb, self.ub), jBest)
+                N_unsuccessful = 0
+                
+                if self.robustness_measure(np.abs(JCurr - jBest)/np.abs(jInit)) < self.improvement_threshold:
+                    print(f"Stopping criteria met: Improvement in function value is less than {self.improvement_threshold}.")
+                    self.stopping_criteria = "Improvement threshold reached"
+                    break
+                
+            else:
+                N_unsuccessful += 1
+                
+                if N_unsuccessful >= 100:
+                    print(f"Stopping criteria met: No sufficient improvement in function value after {N_unsuccessful} unsuccessful line searches.")
+                    self.stopping_criteria = "Maximum unsuccessful line searches attempts reached"
+                    break
+                
             
             dU = value_shifted_array(UCurr, uBest)  # Shift the ensemble members
             dJ = JCurr - jBest  # Shift the function values
@@ -126,6 +150,9 @@ class stosag:
             uBest = uNext  # Update best iterate value
             jBest = jNext  # Update best function value
             
+        if ii == self.max_iter - 1:
+            print(f"Warning: Maximum number of iterations {self.max_iter} reached.")
+            self.stopping_criteria = "Maximum iterations reached"
             
     
     def _backtracking_line_search(self, uInit, jInit, mfunctions, g, alpha):
@@ -136,14 +163,17 @@ class stosag:
         alpha: Initial step size
         maxIter: Maximum number of iterations for backtracking line search
         """
-    
+
+        gamma = 0.001  # Step size reduction factor
         for ii in range(self.line_search_max_iter):
             uNext = uInit - alpha * g  # Calculate the next best point based on the gradient
             
          
             jNext = self.robustness_measure(mfunctions(uNext)) # Evaluate function values at the new point
-
-            if jNext <= jInit:
+            
+            # apply armijo condition
+            if jNext <= jInit - gamma * alpha * np.dot(g, g): 
+            # if jNext < jInit:
                 # print(f"Backtracking line search successful at iteration {ii} with alpha = {alpha}, jNext = {jNext}, jInit = {jInit}")
                 is_successful = True
                 break
@@ -152,7 +182,7 @@ class stosag:
                 if ii == self.line_search_max_iter - 1:
                     is_successful = False
                     # print("Warning: Maximum iterations reached in backtracking line search.")
-                    return uInit, jInit, alpha, is_successful
+                    return uInit, jInit, ii, is_successful
                 
         return uNext, jNext, ii, is_successful
     

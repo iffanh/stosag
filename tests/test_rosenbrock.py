@@ -27,15 +27,15 @@ class RosenbrockTest(unittest.TestCase):
                 return j
 
         N = 2  # number of well parameters
-        M = 100 # number of ensemble realizations
+        M = 10 # number of ensemble realizations
         lb = [-2.0, -2.0]  # lower bound
         ub = [2.0, 2.0]  # upper bound
 
         Ct = make_spd_matrix(N, random_state=42)*0.1 # there are many ways to generate a covariance matrix, this is just one example. See references on how to generate covariance matrices specific for this problem.
 
         # Create ensemble members
-        c1 = norm(1, 0.0001).rvs(size=M)  # Randomly generated c1 values
-        c2 = norm(np.pi/2, 0.0001*np.pi).rvs(size=M)  # Randomly generated c2 values
+        c1 = norm(1, 0.001).rvs(size=M)  # Randomly generated c1 values
+        c2 = norm(np.pi/2, 0.001*np.pi).rvs(size=M)  # Randomly generated c2 values
 
         # rosenbrocks = lambda x: np.array([rosenbrock_uncertainty(x, _c1, _c2) for _c1, _c2 in zip(c1, c2)]) # should also identify the number of ensemble realizations M
         rosenbrocks = lambda x: rosenbrock_uncertainty(x, c1, c2) # should also identify the number of ensemble realizations M
@@ -51,8 +51,9 @@ class RosenbrockTest(unittest.TestCase):
                                 Ct,
                                 constants={'mode': 4,
                                             'max_iter': 10000, 
-                                            'line_search_max_iter': 20, 
-                                            'line_search_alpha': 0.001})
+                                            'line_search_max_iter': 20,
+                                            'line_search_max_attempts': 10,
+                                            'line_search_alpha': 0.1})
 
         stosag_instance.run()  # Run the optimization process
 
