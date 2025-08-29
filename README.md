@@ -25,10 +25,8 @@ pip install git+https://github.com/iffanh/stosag.git
 Run the provided test script:
 
 ```bash
-python test_rosenbrock.py
+python -m unittest
 ```
-
-You can modify `test_rosenbrock.py` to use your own objective functions and uncertainty models.
 
 ## How It Works
 
